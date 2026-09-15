@@ -1,0 +1,45 @@
+/* One element, bottom-right, gone in four seconds. It borrows LeetCode's own
+   dark-panel look so it reads as part of the page rather than an ad. */
+
+.lcas-toast {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483647;
+  max-width: 320px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  border-left: 3px solid currentColor;
+  background: #282828;
+  color: #eff1f6;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  animation: lcas-in 160ms ease-out;
+}
+
+.lcas-toast--success {
+  border-left-color: #2cbb5d;
+}
+
+.lcas-toast--fail {
+  border-left-color: #ef4743;
+}
+
+@keyframes lcas-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lcas-toast {
+    animation: none;
+  }
+}
