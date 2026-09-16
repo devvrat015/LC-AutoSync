@@ -4,7 +4,7 @@
  *       -> parse runtime/memory from the result panel -> POST to localhost:7337
  */
 
-const SERVICE_URL = "https://lc-autosync.vercel.app/submit";
+const SERVICE_URL = "https://lc-auto-sync.vercel.app/submit";
 
 let processed = false;
 let observer = null;

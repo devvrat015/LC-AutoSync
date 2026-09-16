@@ -26,7 +26,7 @@ app.add_middleware(
     allow_origins=[
       "https://leetcode.com",
       "https://www.leetcode.com",
-      "https://lc-autosync.vercel.app",
+      "https://lc-auto-sync.vercel.app",
     ],
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
