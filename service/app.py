@@ -1,6 +1,6 @@
 """FastAPI entry point for lc-autosync.
 
-Run:  uvicorn main:app --port 7337 --reload
+Run: uvicorn app:app --port 7337 --reload
 """
 
 import time
@@ -104,4 +104,4 @@ def submit(submission: Submission):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="127.0.0.1", port=7337, reload=True)
+    uvicorn.run("app:app", host="127.0.0.1", port=7337, reload=True)
