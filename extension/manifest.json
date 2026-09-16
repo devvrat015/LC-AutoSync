@@ -6,13 +6,14 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://leetcode.com/*",
+    "https://www.leetcode.com/*",
     "http://localhost:7337/*",
     "http://127.0.0.1:7337/*",
     "https://lc-auto-sync.vercel.app/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://leetcode.com/problems/*"],
+      "matches": ["https://leetcode.com/problems/*", "https://www.leetcode.com/problems/*"],
       "js": ["content.js"],
       "css": ["toast.css"],
       "run_at": "document_idle"
