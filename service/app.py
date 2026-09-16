@@ -70,12 +70,12 @@ async def validation_handler(request: Request, exc: RequestValidationError):
 # ---------------------------------------------------------------- routes
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/submit", response_model=SubmitResponse)
+@app.post("/api/submit", response_model=SubmitResponse)
 def submit(submission: Submission):
     """Declared `def` on purpose — FastAPI runs it in a threadpool, so the
     blocking PyGithub calls don't stall the event loop."""
