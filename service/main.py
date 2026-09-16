@@ -23,12 +23,17 @@ app = FastAPI(title="lc-autosync", version="1.0")
 # which is cross-origin. Without this the browser blocks the request.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://leetcode.com", "https://www.leetcode.com"],
+    allow_origins=[
+      "https://leetcode.com",
+      "https://www.leetcode.com",
+      "https://lc-autosync.vercel.app",
+    ],
     allow_methods=["POST", "GET", "OPTIONS"],
     allow_headers=["*"],
 )
 
-ERROR_LOG = Path(__file__).parent / "error.log"
+import os
+ERROR_LOG = Path("/tmp/error.log") if os.getenv("VERCEL") else Path(__file__).parent / "error.log"
 
 # ---------------------------------------------------------------- duplicate guard
 
@@ -70,12 +75,12 @@ async def validation_handler(request: Request, exc: RequestValidationError):
 # ---------------------------------------------------------------- routes
 
 
-@app.get("/api/health")
+@app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/api/submit", response_model=SubmitResponse)
+@app.post("/submit", response_model=SubmitResponse)
 def submit(submission: Submission):
     """Declared `def` on purpose — FastAPI runs it in a threadpool, so the
     blocking PyGithub calls don't stall the event loop."""
@@ -104,4 +109,4 @@ def submit(submission: Submission):
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("app:app", host="127.0.0.1", port=7337, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=7337, reload=True)
