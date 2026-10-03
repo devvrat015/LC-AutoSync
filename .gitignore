@@ -1,5 +1,6 @@
 # Environment / secrets
 .env
+service/.env
 
 # Virtual environment
 venv/
@@ -26,4 +27,3 @@ htmlcov/
 .DS_Store
 Thumbs.db
 .vercel
-.env*

@@ -41,10 +41,10 @@ GitHub Repository
 
 ## Repository Output
 
-Solutions are stored using the first LeetCode tag and a zero-padded problem ID:
+Solutions are stored using the first LeetCode tag, a zero-padded problem ID, and a file extension derived from the submission language:
 
 ```text
-topics/<first_tag>/NNNN_<slug>.py
+topics/<first_tag>/NNNN_<slug>.<ext>
 ```
 
 For example:
@@ -55,7 +55,7 @@ topics/
     └── 0001_two_sum.py
 ```
 
-A generated solution file contains the submission metadata followed by the submitted code.
+A C++ submission produces e.g. `topics/array/0001_two_sum.cpp` with a matching comment style. A generated solution file contains the submission metadata followed by the submitted code.
 
 The README problem table is updated along with the solution.
 
@@ -116,13 +116,13 @@ The service manages the problem table between these markers:
 
 If the README does not contain the markers, the service can add them when it first updates the repository.
 
-### 2. Configure GitHub Authentication
+### 2. Configure GitHub OAuth
 
-Create a GitHub Personal Access Token with permission to read and write repository contents for the target solutions repository.
+LC AutoSync is multi-user: each user connects their own GitHub account via OAuth and picks their own repository and branch in the extension popup. The backend never stores GitHub access tokens.
 
-For a classic token, use the `repo` scope.
-
-For a fine-grained token, grant **Contents: Read and write** access to the target repository.
+1. Create a GitHub OAuth App at `https://github.com/settings/developers` → OAuth Apps → New OAuth App.
+2. Set the **Authorization callback URL** after Chrome Web Store publication (see "Production OAuth callback" below). For local development any placeholder works because the extension derives its own redirect URL at runtime via `chrome.identity.getRedirectURL()`.
+3. Request only the `repo` scope (covers private repositories: read profile, list repos/branches, create/update solution and README files). Public-only users could use `public_repo`, but an OAuth App cannot be scoped to a single repository — that would require a GitHub App.
 
 Create:
 
@@ -130,14 +130,23 @@ Create:
 service/.env
 ```
 
-and configure:
+and configure (local development; production uses Vercel environment variables):
 
 ```env
-GITHUB_TOKEN=your_github_token
-GITHUB_REPO=your_username/leetcode-solutions
+GITHUB_CLIENT_ID=your_oauth_app_client_id
+GITHUB_CLIENT_SECRET=your_oauth_app_client_secret
+ENV=dev
 ```
 
-Keep the real `.env` file private. The repository should contain only `.env.example`.
+The client secret lives **only** in the backend environment (local `service/.env`, gitignored — never commit real values; `ENV=production` plus `LC_EXTENSION_ID` on Vercel). The client ID is public and shipped in `extension/config.js`.
+
+#### Production OAuth callback
+
+The extension computes its redirect URL at runtime (`chrome.identity.getRedirectURL()`), which is `https://<extension-id>.chromiumapp.org/`. After Chrome Web Store publication:
+
+1. Open `chrome://extensions`, enable Developer mode, and copy the extension's ID.
+2. In the GitHub OAuth App settings, set the **Authorization callback URL** to `https://<extension-id>.chromiumapp.org/`.
+3. The development extension ID differs from the Web Store ID — update this URL when moving from dev to production.
 
 ### 3. Install the FastAPI Service
 
@@ -249,7 +258,11 @@ Example request:
   "memory_mb": 14.3,
   "runtime_percentile": 87.5,
   "memory_percentile": 72.1,
-  "code": "class Solution:\n    def twoSum(self, nums, target):\n        return []"
+  "code": "class Solution:\n    def twoSum(self, nums, target):\n        return []",
+  "language": "python3",
+  "repo_owner": "your_username",
+  "repo_name": "leetcode-solutions",
+  "branch": "main"
 }
 ```
 
@@ -262,7 +275,7 @@ Successful response:
 }
 ```
 
-If the same problem is received inside the duplicate window:
+If the same user re-sends the identical submission inside the duplicate window:
 
 ```json
 {
@@ -278,7 +291,7 @@ If the same problem is received inside the duplicate window:
 The output path is:
 
 ```text
-topics/<first_tag>/NNNN_<slug>.py
+topics/<first_tag>/NNNN_<slug>.<ext>
 ```
 
 The folder is derived directly from LeetCode's first tag. For example, `Array` becomes:
@@ -287,15 +300,17 @@ The folder is derived directly from LeetCode's first tag. For example, `Array` b
 topics/array/
 ```
 
+The extension comes from the submission language (Python → `.py`, C++ → `.cpp`, Java → `.java`, …) with a matching header comment style.
+
 ### Re-submissions
 
 Submitting the same problem again updates the existing solution file and replaces its README row rather than creating a duplicate entry.
 
 ### Duplicate Guard
 
-The service keeps a short in-memory record of recently processed problem IDs.
+The service keeps a short in-memory record of recently processed syncs, keyed by **authenticated GitHub user id + repository + branch + problem + code hash** (the user id is resolved from the token via the GitHub API; the token itself is never used as an identity and never stored for this purpose).
 
-If the same `problem_id` is received within **10 seconds**, the request returns:
+If the same user re-sends the identical submission within **10 seconds**, the request returns:
 
 ```json
 {
@@ -303,7 +318,7 @@ If the same `problem_id` is received within **10 seconds**, the request returns:
 }
 ```
 
-This prevents repeated browser events from producing multiple GitHub commits.
+A resubmission with *different code* is treated as an update and commits normally, even inside the window. Different users never share sync state, even for identical code in the same repository. The record is per backend instance: a serverless restart clears it, in which case the worst outcome is one redundant update commit.
 
 ### Partial Failures
 
@@ -314,6 +329,16 @@ If the solution is successfully committed but the README update fails, the solut
 ```text
 service/error.log
 ```
+
+(`/tmp/error.log` on Vercel.) Error entries contain the repository name, problem id, exception type/message, and a short traceback — never GitHub tokens, OAuth codes, secrets, or solution code.
+
+### Privacy
+
+LC Auto Sync does not persist your GitHub access token or solution source code as application data. Solution code passes through the backend in memory to reach GitHub. Operational logs may contain limited diagnostic metadata such as repository or problem identifiers.
+
+### Production CORS
+
+The backend allows the LeetCode origins, the production service domain, and the extension origin. Before the Chrome Web Store ID is known, any `chrome-extension://` origin is accepted (request still requires the user's Bearer token). After publication, set `LC_EXTENSION_ID` in the Vercel environment to the Web Store extension ID to pin production CORS to exactly `chrome-extension://<PRODUCTION_EXTENSION_ID>`.
 
 ### Request Handling
 

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Connect View -->
+  <div id="view-connect" class="view hidden">
+    <div class="logo">LC AutoSync</div>
+    <p class="description">Automatically sync your accepted LeetCode solutions to GitHub.</p>
+    <button id="btn-connect" class="btn-primary">Connect GitHub</button>
+    <p class="footer-text">Requests access to read your profile and create/update files in the repository you choose. Solution code passes through the sync service to reach GitHub. LC Auto Sync does not persist your GitHub access token or solution source code as application data; operational logs may contain limited diagnostic metadata such as repository or problem identifiers.</p>
+  </div>
+
+  <!-- Setup View -->
+  <div id="view-setup" class="view hidden">
+    <div class="user-info">
+      <img id="setup-avatar" src="" alt="User Avatar" class="avatar">
+      <span id="setup-username">Username</span>
+      <span class="status-check">✓</span>
+    </div>
+    <div class="form-group">
+      <label for="repo-select">Choose Repository</label>
+      <select id="repo-select">
+        <option value="" disabled selected>Select a repository</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="branch-select">Branch</label>
+      <select id="branch-select" disabled>
+        <option value="" disabled selected>Select a branch</option>
+      </select>
+    </div>
+    <button id="btn-save" class="btn-primary" disabled>Save & Continue</button>
+    <div id="setup-error" class="error-msg hidden"></div>
+  </div>
+
+  <!-- Dashboard View -->
+  <div id="view-dashboard" class="view hidden">
+    <div class="header">
+      <div class="user-info">
+        <img id="dash-avatar" src="" alt="User Avatar" class="avatar">
+        <span id="dash-username">Username</span>
+      </div>
+      <button id="btn-settings-toggle" class="icon-btn" title="Settings">⚙️</button>
+    </div>
+    
+    <div class="status-box">
+      <div class="status-text">✓ Ready — syncing accepted solutions</div>
+      <div id="dash-repo-info" class="repo-info">owner/repo @ main</div>
+    </div>
+    
+    <div class="toggle-group">
+      <span>Auto-sync enabled</span>
+      <label class="switch">
+        <input type="checkbox" id="toggle-sync">
+        <span class="slider round"></span>
+      </label>
+    </div>
+
+    <!-- Settings Section -->
+    <div id="settings-section" class="settings-panel hidden">
+      <button id="btn-change-repo" class="btn-secondary">Change Repository</button>
+      <button id="btn-disconnect" class="btn-danger">Disconnect GitHub</button>
+    </div>
+    
+    <div class="footer">
+      <a href="https://leetcode.com/problemset/all/" target="_blank">Open LeetCode</a>
+    </div>
+  </div>
+
+  <!-- Loading View -->
+  <div id="view-loading" class="view">
+    <div class="spinner"></div>
+    <p id="loading-text">Loading...</p>
+  </div>
+
+  <!-- Global Error Overlay -->
+  <div id="global-error" class="global-error hidden">
+    <p id="error-text">An error occurred.</p>
+    <button id="btn-error-close" class="btn-secondary">Dismiss</button>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="oauth_state.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

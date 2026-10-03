@@ -4,7 +4,8 @@
  *       -> parse runtime/memory from the result panel -> POST to Vercel service
  */
 
-const SERVICE_URL = "https://lc-auto-sync.vercel.app/submit";
+let currentConfig = null;
+let detectedLanguage = "python3";
 
 let processed = false;
 let observer = null;
@@ -130,7 +131,7 @@ function findSubmissionId() {
 
 async function fetchCodeViaSubmission(submissionId) {
   const query =
-    "query submissionDetails($submissionId: Int!) { submissionDetails(submissionId: $submissionId) { code } }";
+    "query submissionDetails($submissionId: Int!) { submissionDetails(submissionId: $submissionId) { code lang { name verboseName } } }";
   const res = await fetch(graphqlBase() + "/graphql", {
     method: "POST",
     credentials: "include",
@@ -139,7 +140,9 @@ async function fetchCodeViaSubmission(submissionId) {
   });
   if (!res.ok) return "";
   const json = await res.json();
-  const code = json?.data?.submissionDetails?.code;
+  const subDetails = json?.data?.submissionDetails;
+  if (subDetails?.lang?.name) detectedLanguage = subDetails.lang.name;
+  const code = subDetails?.code;
   return code ? code.trimEnd() : "";
 }
 
@@ -147,8 +150,8 @@ async function fetchCodeViaSubmission(submissionId) {
 async function fetchLatestAcceptedSubmissionId(slug) {
   const base = graphqlBase();
   const queries = [
-    "query subList($questionSlug: String!, $limit: Int!, $offset: Int!) { submissionList(questionSlug: $questionSlug, limit: $limit, offset: $offset) { submissions { id statusDisplay } } }",
-    "query subList($questionSlug: String!) { questionSubmissionList(questionSlug: $questionSlug, limit: 20) { submissions { id statusDisplay } } }",
+    "query subList($questionSlug: String!, $limit: Int!, $offset: Int!) { submissionList(questionSlug: $questionSlug, limit: $limit, offset: $offset) { submissions { id statusDisplay lang } } }",
+    "query subList($questionSlug: String!) { questionSubmissionList(questionSlug: $questionSlug, limit: 20) { submissions { id statusDisplay lang } } }",
   ];
   for (const query of queries) {
     try {
@@ -167,7 +170,10 @@ async function fetchLatestAcceptedSubmissionId(slug) {
         json?.data?.submissionList || json?.data?.questionSubmissionList;
       const subs = list?.submissions || [];
       const acc = subs.find((s) => s.statusDisplay === "Accepted");
-      if (acc) return parseInt(acc.id, 10);
+      if (acc) {
+        if (acc.lang) detectedLanguage = acc.lang;
+        return parseInt(acc.id, 10);
+      }
     } catch (_) {
       /* try next query shape */
     }
@@ -282,15 +288,37 @@ async function buildPayload(expectedSlug) {
   const [meta, stats] = await Promise.all([fetchMetadata(slug), fetchSubmissionStats()]);
   if (slug !== currentSlug()) throw new Error("Navigated mid-sync, aborted");
   if (!stats.runtime_ms && !stats.memory_mb) throw new Error("Result stats not ready, aborted");
-  return { ...meta, ...stats, code };
+  
+  if (!detectedLanguage) {
+    const langBtn = document.querySelector('[data-cy="lang-btn"]');
+    if (langBtn) detectedLanguage = langBtn.textContent.trim().toLowerCase();
+  }
+
+  return { 
+    ...meta, 
+    ...stats, 
+    code,
+    language: detectedLanguage,
+    repo_owner: currentConfig.repo_owner,
+    repo_name: currentConfig.repo_name,
+    branch: currentConfig.branch
+  };
 }
 
 async function postToService(payload) {
-  const res = await fetch(SERVICE_URL, {
+  const res = await fetch(LC_CONFIG.SERVICE_URL + '/submit', {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { 
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${currentConfig.github_token}`
+    },
     body: JSON.stringify(payload),
   });
+
+  if (res.status === 401) {
+    showToast('fail', 'GitHub authorization expired. Reconnect in extension popup.');
+    throw new Error('401_UNAUTHORIZED');
+  }
 
   let body = {};
   try {
@@ -320,6 +348,20 @@ function showToast(state, message) {
 /* ----------------------------------------------------------- main */
 
 async function sync() {
+  const config = await new Promise(resolve => 
+    chrome.storage.local.get(['github_token', 'repo_owner', 'repo_name', 'branch', 'auto_sync'], resolve)
+  );
+  if (!config.github_token || !config.repo_owner || !config.repo_name) {
+    showToast('fail', 'LC AutoSync: Connect GitHub in the extension popup first.');
+    processed = false;
+    startObserver();
+    return;
+  }
+  if (config.auto_sync === false) {
+    return; // Auto-sync disabled
+  }
+  currentConfig = config;
+
   if (processed) return;
   // SPA navigation leaves stale DOM for a moment. Delay, don't drop.
   if (Date.now() - lastNavTime < 3000) {
@@ -365,7 +407,11 @@ async function sync() {
       startObserver();
       return;
     }
-    showToast("fail", `Sync failed: ${err.message}`);
+    if (err.message === '401_UNAUTHORIZED') {
+      // Toast already shown in postToService
+    } else {
+      showToast("fail", `Sync failed: ${err.message}`);
+    }
     processed = false;
     startObserver();
   }
