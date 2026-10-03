@@ -32,14 +32,24 @@ SEED_README = f"""# leetcode-solutions
 """
 
 
+def _md_cell(text: str) -> str:
+    """Keep one table cell on one row: pipes would split cells, newlines rows."""
+    return str(text).replace("\\", "\\\\").replace("|", "\\|").replace("\n", " ").replace("\r", " ")
+
+
+def _md_link_text(text: str) -> str:
+    """Link text for [title](url): brackets would break out of the link."""
+    return _md_cell(text).replace("[", "\\[").replace("]", "\\]")
+
+
 def build_row(submission: Submission) -> str:
     path = file_builder.resolve_path(submission)
     tags = ", ".join(submission.tags) if submission.tags else "—"
     return (
         f"| {submission.problem_id} "
-        f"| [{submission.title}]({submission.url}) "
-        f"| {submission.difficulty} "
-        f"| {tags} "
+        f"| [{_md_link_text(submission.title)}]({submission.url}) "
+        f"| {_md_cell(submission.difficulty)} "
+        f"| {_md_cell(tags)} "
         f"| {submission.runtime_ms}ms ({submission.runtime_percentile}%) "
         f"| {submission.memory_mb}MB ({submission.memory_percentile}%) "
         f"| [solution]({path}) |"
@@ -74,11 +84,11 @@ def _render_block(rows: dict[int, str]) -> str:
     return "\n".join([START, HEADER, *ordered, END])
 
 
-def upsert_row(submission: Submission) -> None:
-    repo = get_repo()
+def upsert_row(token: str, repo_full_name: str, branch: str, submission: Submission) -> None:
+    repo = get_repo(token, repo_full_name)
 
     try:
-        contents = repo.get_contents("README.md")
+        contents = repo.get_contents("README.md", ref=branch)
         current = contents.decoded_content.decode("utf-8")
         sha = contents.sha
     except GithubException as exc:
@@ -104,6 +114,6 @@ def upsert_row(submission: Submission) -> None:
 
     message = f"docs: update problem table ({submission.padded_id}. {submission.title})"
     if sha:
-        repo.update_file("README.md", message, new_content, sha)
+        repo.update_file("README.md", message, new_content, sha, branch=branch)
     else:
-        repo.create_file("README.md", message, new_content)
+        repo.create_file("README.md", message, new_content, branch=branch)

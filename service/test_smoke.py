@@ -24,6 +24,10 @@ PAYLOAD = {
     "runtime_percentile": 87.5,
     "memory_percentile": 72.1,
     "code": "class Solution:\n    def twoSum(self, nums, target):\n        return []",
+    "language": "python3",
+    "repo_owner": "testuser",
+    "repo_name": "leetcode-solutions",
+    "branch": "main"
 }
 
 # ------------------------------------------------------------------ stubs
@@ -35,13 +39,13 @@ readme_state = {
 }
 
 
-def fake_commit(submission: Submission) -> str:
+def fake_commit(token: str, repo_full_name: str, branch: str, submission: Submission) -> str:
     path = file_builder.resolve_path(submission)
     committed[path] = file_builder.build_content(submission)
     return f"https://github.com/user/leetcode-solutions/blob/main/{path}"
 
 
-def fake_upsert(submission: Submission) -> None:
+def fake_upsert(token: str, repo_full_name: str, branch: str, submission: Submission) -> None:
     current = readme_state["content"]
     before, _, rest = current.partition(readme_updater.START)
     block, _, after = rest.partition(readme_updater.END)
@@ -52,16 +56,20 @@ def fake_upsert(submission: Submission) -> None:
 
 main.github_client.commit_solution = fake_commit
 main.readme_updater.upsert_row = fake_upsert
+# Bypass live GitHub access checks (no network in this test).
+main.github_client.verify_write_access = lambda *a, **k: None
+# Stable per-token user ids: token_A/token_A2 are the SAME user (reconnect),
+# token_B is a different user.
+_USER_IDS = {"fake_token": 1, "token_A": 101, "token_A2": 101, "token_B": 102}
+main.get_caller_identity = lambda token: _USER_IDS.get(token, 999)
 
 # ------------------------------------------------------------------ run
 
 client = TestClient(main.app)
 
-
 def check(label, condition):
     print(f"  {'PASS' if condition else 'FAIL'}  {label}")
     assert condition, label
-
 
 print("\n1. path + content")
 sub = Submission(**PAYLOAD)
@@ -72,27 +80,52 @@ check("header contains padded id", "0001. Two Sum" in content)
 check("header contains percentiles", "beats 87.5%" in content and "beats 72.1%" in content)
 check("code follows header", content.strip().endswith("return []"))
 
-print("\n2. POST /submit")
-r = client.post("/submit", json=PAYLOAD)
+print("\n2. POST /submit missing auth header")
+r0 = client.post("/submit", json=PAYLOAD)
+check(f"status 401 (got {r0.status_code})", r0.status_code == 401)
+check("status error", r0.json()["status"] == "error")
+
+print("\n3. POST /submit")
+r = client.post("/submit", json=PAYLOAD, headers={"Authorization": "Bearer fake_token"})
 check(f"status 200 (got {r.status_code})", r.status_code == 200)
 check("status ok", r.json()["status"] == "ok")
 check("file committed", path in committed)
 
-print("\n3. duplicate guard")
-r2 = client.post("/submit", json=PAYLOAD)
+print("\n4. duplicate guard (stable identity: repo+branch+problem+code)")
+r2 = client.post("/submit", json=PAYLOAD, headers={"Authorization": "Bearer fake_token"})
 check("second post within 10s -> duplicate", r2.json()["status"] == "duplicate")
 
-print("\n4. validation")
+print("\n4b. same problem, different code -> update, NOT duplicate")
+main._recent.clear()
+main._rate_hits.clear()
+r2b = client.post("/submit", json=dict(PAYLOAD, code="class Solution:\n    def twoSum(self, n, t):\n        return [0, 1]"), headers={"Authorization": "Bearer fake_token"})
+check("different code passes dedup", r2b.json()["status"] == "ok")
+
+print("\n4c. reconnect (same user, new token), same repo+code -> still duplicate")
+main._recent.clear()
+main._rate_hits.clear()
+client.post("/submit", json=PAYLOAD, headers={"Authorization": "Bearer token_A"})
+r2c = client.post("/submit", json=PAYLOAD, headers={"Authorization": "Bearer token_A2"})
+check("token rotation does not reset dedup", r2c.json()["status"] == "duplicate")
+
+print("\n4d. different repo, same problem -> independent (multi-user isolation)")
+main._recent.clear()
+main._rate_hits.clear()
+other = dict(PAYLOAD, repo_owner="otheruser", repo_name="other-repo")
+r2d = client.post("/submit", json=other, headers={"Authorization": "Bearer token_B"})
+check("other repo not blocked by first user's sync", r2d.json()["status"] == "ok")
+
+print("\n5. validation")
 bad = {k: v for k, v in PAYLOAD.items() if k != "code"}
-r3 = client.post("/submit", json=bad)
+r3 = client.post("/submit", json=bad, headers={"Authorization": "Bearer fake_token"})
 check(f"missing field -> 400 (got {r3.status_code})", r3.status_code == 400)
 check("names the field", "code" in r3.json()["message"])
 
-print("\n5. README upsert")
+print("\n6. README upsert")
 second = dict(PAYLOAD, problem_id=42, title="Trapping Rain Water", slug="trapping-rain-water",
               difficulty="Hard", tags=["Array", "Two Pointers"], runtime_ms=88)
 main._recent.clear()
-client.post("/submit", json=second)
+client.post("/submit", json=second, headers={"Authorization": "Bearer fake_token"})
 readme = readme_state["content"]
 check("row 1 present", "| 1 | [Two Sum]" in readme)
 check("row 42 present", "| 42 | [Trapping Rain Water]" in readme)
@@ -101,10 +134,35 @@ check("text below table preserved", "_Generated by lc-autosync._" in readme)
 
 # re-submit problem 1 with new stats -> replaces, does not duplicate
 main._recent.clear()
-client.post("/submit", json=dict(PAYLOAD, runtime_ms=40, runtime_percentile=99.1))
+client.post("/submit", json=dict(PAYLOAD, runtime_ms=40, runtime_percentile=99.1), headers={"Authorization": "Bearer fake_token"})
 readme = readme_state["content"]
 check("no duplicate row for 1", readme.count("[Two Sum](") == 1)
 check("row updated in place", "40ms (99.1%)" in readme)
+
+print("\n7. POST /auth/github/exchange test")
+import httpx
+# mock httpx post
+class MockResponse:
+    def __init__(self):
+        self.status_code = 200
+        self.text = '{"access_token": "token", "token_type": "bearer", "scope": "repo"}'
+    def json(self):
+        return json.loads(self.text)
+
+class MockAsyncClient:
+    def __init__(self, *a, **k):
+        pass
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, exc_type, exc, tb):
+        pass
+    async def post(self, url, data, headers):
+        return MockResponse()
+
+main.httpx.AsyncClient = MockAsyncClient
+
+r_exchange = client.post("/auth/github/exchange", json={"code": "123"})
+check("exchange ok", r_exchange.status_code == 200)
 
 print("\nREADME now:\n")
 print(readme_state["content"])
